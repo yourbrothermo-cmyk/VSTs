@@ -1,0 +1,40 @@
+name: build
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  linux-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build libasound2-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxext-dev libfreetype-dev libfontconfig1-dev libgl-dev libxcomposite-dev
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build -j4
+      - run: ctest --test-dir build --output-on-failure
+
+  macos-plugin:
+    runs-on: macos-14
+    env:
+      ORT_VERSION: 1.20.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch ONNX Runtime (universal2)
+        run: |
+          curl -sSL -o ort.tgz https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-osx-universal2-${ORT_VERSION}.tgz
+          tar xzf ort.tgz && mv onnxruntime-osx-universal2-${ORT_VERSION} ort
+      - run: brew install ninja
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVOXFORGE_WITH_ONNX=ON -DONNXRUNTIME_ROOT=$PWD/ort
+      - run: cmake --build build -j4
+      - run: ctest --test-dir build --output-on-failure
+      - name: Validate AU
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R build/plugin/VoxForge_artefacts/Release/AU/VoxForge.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aufx Vxf1 Vxfg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoxForge-macOS
+          path: |
+            build/plugin/VoxForge_artefacts/Release/AU/VoxForge.component
+            build/plugin/VoxForge_artefacts/Release/VST3/VoxForge.vst3
+            build/plugin/VoxForge_artefacts/Release/Standalone/VoxForge.app
