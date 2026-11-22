@@ -260,9 +260,11 @@ TEST(live_neural_engine_pipeline) {
     CHECK(eng.latencySamples() > 0 && eng.latencySamples() < int(0.15 * sr));
     auto x = harmonicTone(std::vector<float>(size_t(sr * 2), midiToHz(69.3f)), sr);
     std::vector<float> y(x.size());
+    // Pace blocks at real time, as a host would; the worker must keep up.
+    const auto t0 = std::chrono::steady_clock::now();
     for (size_t i = 0; i < x.size(); i += 512) {
         eng.process(x.data() + i, y.data() + i, int(std::min<size_t>(512, x.size() - i)));
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        std::this_thread::sleep_until(t0 + std::chrono::microseconds(long((i + 512) * 1e6 / sr)));
     }
     eng.stop();
     CHECK(eng.underruns() == 0);
